@@ -69,3 +69,25 @@ An advanced execution hub demonstrating the **Model Context Protocol (MCP)** by 
    ```bash
    python src/client/hr_agent.py
    ```
+
+## 📂 Repository File Structure
+
+```text
+umbrella-corp-hr-mcp/
+├── .github/
+│   └── workflows/
+│       └── ci.yml             # Continuous Integration automated build engine
+├── prompts/
+│   └── claude_desktop.md      # Dual-Pass UI instructions for Claude Desktop
+├── src/
+│   ├── client/
+│   │   └── hr_agent.py        # LangGraph client orchestration application
+│   ├── database/
+│   │   └── seed_db.py         # Relational database layout seeding engine
+│   └── server/
+│       └── hr_mcp_server.py   # FastMCP server + server-side masking engine
+├── .env.example               # Configuration parameter placeholder template
+├── .gitignore                 # Blocks cache, local environments, and database binaries
+├── pyproject.toml             # Modern package build and configuration metadata
+└── requirements.txt           # Explicit frozen dependency version manifest
+```
