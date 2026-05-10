@@ -42,33 +42,134 @@ An advanced execution hub demonstrating the **Model Context Protocol (MCP)** by 
 *   **Operating System Level Role Isolation**: Removes the `role` parameter entirely from tools exposed to the LLM. Roles are bound directly to the sub-process environment configuration states (`os.getenv("SESSION_ROLE")`), preventing any parameter-spoofing prompt injections.
 *   **Two-Pass De-Tokenization Rendering**: The client intercepts the token payload (`[TOKEN_SALARY_XXXX]`) outside of the agent's memory framework. It programmatically resolves tokens and displays clean values directly onto the HR Specialist's terminal view, ensuring that long-term LLM session histories and external server audits remain completely PII-blind.
 
-## 🚀 Installation & Local Verification
+## 🚀 End-to-End System Installation & Configuration Guide
 
-1. Clone this repository and establish your virtual environment variables:
+This workspace features a decoupled architectural layout, allowing you to run the system in two separate operational environments depending on your engineering target:
+1. **Local Developer Console Mode**: A terminal-based simulation using our custom client script to verify execution outputs and automated audit database pipelines.
+2. **Enterprise Copilot Mode**: Local registration with the native Claude Desktop client application to drive isolated, sandboxed Claude Project workspaces featuring interactive HTML data dashboard rendering.
+
+---
+
+### 📦 Phase 1: Local Dependency & Data Layer Initialization
+
+Before initializing either client environment, you must build your local isolated package dependencies and seed the local database storage engines.
+
+1. Clone the repository and navigate to your workspace root directory:
    ```bash
    git clone github.com
    cd umbrella-corp-hr-mcp
+   ```
+
+2. Establish your local isolated Python virtual environment container:
+   ```bash
    python3 -m venv .venv
    source .venv/bin/activate
+   ```
+
+3. Upgrade your package manager and mount your explicit, version-frozen system dependencies:
+   ```bash
    pip install --upgrade pip
+   pip install -r requirements.txt
    pip install -e .
    ```
 
-2. Create your `.env` configuration mapping based on `.env.example`:
+4. Instantiate your localized environment variable storage file:
    ```bash
    cp .env.example .env
-   # Populate with your OpenAI, Pinecone, and configuration parameter items
+   ```
+   Open the newly generated `.env` file using a text editor and populate your live API authentication strings:
+   ```ini
+   OPENAI_API_KEY=sk-proj-YOUR_ACTUAL_OPENAI_KEY_STREAM
+   PINECONE_API_KEY=pcsk_YOUR_ACTUAL_PINECONE_KEY_STREAM
+   PINECONE_INDEX_NAME=hr-policies-index
    ```
 
-3. Seed the relational datastore (creates user structures, links supervisors, and hashes passwords safely):
+5. Execute the cryptographic personnel seeding engine to construct table layouts in the correct relational constraint sequence:
    ```bash
    python src/database/seed_db.py
    ```
+   *CRITICAL DESIGN NOTE: Take explicit note of the usernames (e.g., `john_3619`), generated IDs (`user_3619`), and mapped roles (`hr`, `admin`, `employee`) printed to your console. These profiles match your hashed database parameter tables and are required for downstream authentication testing loops.*
 
-4. Run the interactive LangGraph pipeline console framework application:
+---
+
+### 💻 Phase 2: Mode 1 - Terminal Execution Engine (`hr_agent.py`)
+
+This mode handles multi-turn conversation parsing, LangGraph memory persistence, and client-side token interception entirely within a terminal console window.
+
+1. Launch the interactive client script:
    ```bash
    python src/client/hr_agent.py
    ```
+2. Enter a valid username and the password combination (`password123`) generated during the database seeding phase.
+3. Once authenticated, input queries naturally (e.g., `"Show me the profile for user_3619"` or `"What are our rules regarding parental time off?"`).
+4. Review the outputs to verify that your terminal intercepts `[TOKEN_SALARY_XXXX]` parameters outside the LLM context, swaps them in memory, and prints real unmasked values cleanly to the operator screen.
+5. Type `exit` or `logout` to cleanly commit the final compliance logs and kill the sub-process sockets.
+
+---
+
+### 🖥️ Phase 3: Mode 2 - Claude Desktop Application System Registration
+
+This process links your custom FastMCP Python data server directly into the system layer of the native Claude Desktop interface.
+
+#### Step 1: Open the Claude Desktop Settings Configuration File
+Locate and open the global configuration manifest file used by Claude Desktop using a text editor:
+*   **macOS Path**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+*   **Windows Path**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+#### Step 2: Register the Sub-Process Execution Parameters
+Paste the configuration layout block below directly inside the `mcpServers` tracking object array. You **must** replace `YOUR_USER_NAME` with your actual machine root folder username to point explicitly to your absolute virtual environment bin file and Python scripts:
+
+```json
+{
+  "mcpServers": {
+    "hr-assistant": {
+      "command": "/Users/YOUR_USER_NAME/umbrella-corp-hr-mcp/.venv/bin/python3",
+      "args": [
+        "/Users/YOUR_USER_NAME/umbrella-corp-hr-mcp/src/server/hr_mcp_server.py"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY_HERE",
+        "PINECONE_API_KEY": "YOUR_PINECONE_API_KEY_HERE",
+        "PINECONE_INDEX_NAME": "YOUR_PINECONE_INDEX_NAME_HERE"
+      }
+    }
+  }
+}
+```
+
+#### Step 3: Verify Tool Schema Mapping and Active Permissions Status
+1. Completely restart your Claude Desktop application to reload system sockets and initialize handshakes.
+2. Click the **`+` (Attachment/Integrations)** menu icon inside any input window box, go to **Connectors**, and ensure `hr-assistant` is visible with its tracking toggle switched **On (Blue)**.
+3. Navigate to your application global settings dashboard (`Customize` -> `Connectors` -> Click on **`hr-assistant`** under Local Development):
+   * Confirm that exactly **12 operational tools** are active and mapped under the `Other tools` registry block (spanning `query_employees` through `demask_token_payload`).
+   * Ensure that the execution permission setting dropdown is explicitly configured to **`Needs approval`**. This guarantees a human-in-the-loop verification prompt displays before Claude executes queries against your dataset.
+
+---
+
+### 📂 Phase 4: Mode 3 - Isolated Claude Project Sandbox Deployment
+
+This phase builds a secure, dedicated workspace container inside Claude to lock down behavior prompts and automatically expose your backend tool schema matrices.
+
+#### Step 1: Construct the New Workspace Container
+1. Click on **Projects** in the primary navigation sidebar array inside the Claude application.
+2. Click on the **`New project`** command button in the upper right corner of the workspace layout.
+3. Name the container exactly: **`Umbrella HR Control`**
+4. Set the descriptive metadata statement to document the system limits:
+   * *"Production HR interface connected to local SQLite data pools and Pinecone policy indexes via Model Context Protocol (MCP)."*
+
+#### Step 2: Inject the Two-Pass System Prompt Manifesto
+1. Inside the newly generated project dashboard workspace, locate the **Instructions** block panel at the bottom right and click the **Edit (Pencil)** icon to trigger the **`Set project instructions`** configuration modal window.
+2. Open your local project file `prompts/claude_desktop.md` and copy the entire plaintext payload text block.
+3. Paste the contents directly into the text input area of the modal panel.
+4. Verify that all security clauses are intact—including the `--- IMPORTANT SECURITY PARADIGM SHIFT ---` tracking headers, the server-side OS injection variable warnings, and the two-pass token masking requirements.
+5. Click **`Save instructions`** to lock down the behavior profile across all future communication streams.
+
+#### Step 3: Run Secure Production Queries
+1. Click **`New chat`** within your isolated `Umbrella HR Control` Project container interface.
+2. Paste your system-level authentication instructions straight into your new chat pane to trigger your login interface: `"Authenticate user john_3619 with password password123"` (substitute with your actual seeded profile metadata properties).
+3. Claude will read your custom instructions and generate your modern enterprise landing login interface cleanly inside a visual **Claude Artifact panel**.
+4. Use the interface to execute secure, tokenized data retrievals. The underlying `hr_mcp_server.py` engine masks row values seamlessly, and Claude translates them dynamically *only* within your localized HTML framework view.
+
 
 ## 📂 Repository File Structure
 
