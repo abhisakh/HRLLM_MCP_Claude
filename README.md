@@ -2,6 +2,24 @@
 
 An advanced execution hub demonstrating the **Model Context Protocol (MCP)** by decoupling AI reasoning from high-privilege corporate data layers. This architecture implements a zero-exposure environment where sensitive PII (Salaries, Bank Details, Addresses) is masked directly at the database engine cursor level before entering the LLM's context window.
 
+## 🏛️ Architectural Migration Manifesto: Shifting from HRChat to MCP Hub
+
+### 🔄 Context and Historical Evolution
+This project represents a complete decoupling and security overhaul of my previous full-stack implementation, [HRChat](https://github.com/abhisakh/HRChat.git). While the legacy `HRChat` system successfully demonstrated a hybrid AI architecture (SQL + Vector Search) built using FastAPI and a React 19 single-page application, it suffered from severe structural limitations regarding **enterprise boundary isolation** and **client-side identity trustworthiness**.
+
+### 🛑 Core Weaknesses of the Legacy HRChat Blueprint
+As documented in the original [HRChat Manifest](https://github.com/abhisakh/HRChat.git), the legacy architecture processed data access controls by trusting client-side context state boundaries:
+1. **Identity Spoofing Vulnerabilities**: The client application passed a plain-text `user_id` string directly inside the request payload body. Although `sql_tool.py` restricted *what data* fields came back based on database roles, an attacker could manipulate request payloads to spoof alternative identities, resulting in unauthorized lookups of peers' employment records.
+2. **Coupled Infrastructure Overhead**: The system relied on an embedded API Gateway layer (`main.py`) to bridge the communication channel between the React web UI and the LangGraph graph execution nodes. This coupled structure meant that any update to the application layer required rebuilding, redeploying, and maintaining the entire proprietary stack.
+3. **Prompt Injection Risk Surface**: Because routing and role bindings were managed down the network stream through REST API endpoints, sophisticated zero-shot prompt injection attempts could alter tool-calling states or compromise context historical frames passed back and forth across raw JSON channels.
+
+### 🎯 Strategic Significance & Goals of the MCP Overhaul
+The transition to this **Model Context Protocol (MCP) Hub** architecture completely re-engineers the trust boundaries of enterprise AI integration by achieving three primary architectural goals:
+
+*   **Zero-Trust OS-Level Boundary Isolation**: By migrating to an open-standard MCP server model (`src/server/hr_mcp_server.py`), the codebase completely strips parameter control from both the frontend application and the LLM. User permissions are bound directly to the operating system's sub-process context configuration (`SESSION_ROLE`), removing request forgery and identity spoofing entirely.
+*   **Decoupled, Protocol-Driven Interoperability**: By eliminating the coupled FastAPI/React network overhead, the Python data layer compiles as a clean, stateless plug-and-play microservice. It connects instantly to standard enterprise clients (like the native **Claude Desktop App** or custom clients like `src/client/hr_agent.py`) using unified Stdio/SSE JSON-RPC protocol guidelines.
+*   **Hardened Server-Side Cryptographic Masking**: Real dataset figures never exit the server process memory boundary onto the LLM heap unencrypted. The legacy project's soft role filtering is replaced with custom SQLite user-defined functions running at the cursor layer. Sensitive PII properties are securely tokenized into `[TOKEN_SALARY_XXXX]` system tracking strings, allowing full agentic reasoning across documents while leaving conversation context logs and vector indexes entirely blind to raw, vulnerable business fields.
+
 ## 🏗️ System Architecture
 
 ```text
