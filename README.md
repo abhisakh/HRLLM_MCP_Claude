@@ -185,6 +185,7 @@ umbrella-corp-hr-mcp/
 │   │   └── hr_agent.py        # LangGraph client orchestration application
 │   ├── database/
 │   │   └── seed_db.py         # Relational database layout seeding engine
+│   │   └── hr_database.db
 │   └── server/
 │       └── hr_mcp_server.py   # FastMCP server + server-side masking engine
 ├── .env.example               # Configuration parameter placeholder template

@@ -16,10 +16,15 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 # Load environment variables from the local path
-load_dotenv(Path(__file__).parent / ".env")
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-VENV_PYTHON = "/Users/abhisakhsarma/Software_Engineering/Master_School/MCP/my_mcp_project/.venv/bin/python3"
-SERVER_SCRIPT = "/Users/abhisakhsarma/Software_Engineering/Master_School/MCP/my_mcp_project/hr_mcp_server.py"
+# Load environment variables dynamically from the primary root directory
+load_dotenv(REPO_ROOT / ".env")
+
+# Reconfigure your execution paths to look dynamically inside the new src directory tree
+VENV_PYTHON = str(REPO_ROOT / ".venv" / "bin" / "python3")
+SERVER_SCRIPT = str(REPO_ROOT / "src" / "server" / "hr_mcp_server.py")
+
 
 CORE_STRATEGY_PROMPT = """You are the Umbrella Corp HR Assistant.
 Current Session: {first_name} (ID: {user_id}) | Role: {role}

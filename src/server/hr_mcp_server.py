@@ -12,8 +12,8 @@ from mcp.server.fastmcp import FastMCP
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 
-# Absolute database location fallback tuning
-DB_PATH = Path(__file__).parent / "hr_database.db"
+# Resolves: src/server -> moves up to src/ -> drops into database/hr_database.db
+DB_PATH = Path(__file__).resolve().parent.parent / "database" / "hr_database.db"
 
 mcp = FastMCP("HR_Assistant")
 
