@@ -1,0 +1,49 @@
+name: Continuous Integration Security & Build Audit
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  audit-pipeline:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+    - name: 📥 Check out source repository code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Initialize Python Runtime Environment Engine
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        cache-dependency-path: 'requirements.txt'
+
+    - name: 📦 Upgrade core packet installer and mount dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install flake8 pytest
+
+    - name: 🛡️ Code Linting Analysis (Syntax Verification)
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub Editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: 💾 Test Schema Build & Cryptographic Database Seeding
+      run: |
+        # Simulate local database generation pipeline setup constraints
+        # Spins up seed execution silently to confirm PK/FK constraints pass cleanly
+        echo "no" | python src/database/seed_db.py
+
+    - name: 🛰️ Verify MCP Server Core Compilation Status
+      run: |
+        # Verifies that python can parse syntax tree configurations and compile server definitions
+        python -m py_compile src/server/hr_mcp_server.py
