@@ -171,6 +171,59 @@ This phase builds a secure, dedicated workspace container inside Claude to lock 
 4. Use the interface to execute secure, tokenized data retrievals. The underlying `hr_mcp_server.py` engine masks row values seamlessly, and Claude translates them dynamically *only* within your localized HTML framework view.
 
 
+
+## 🔍 Phase : Debugging & Integration Auditing via MCP Inspector
+
+To verify, log, and inspect your custom tool schemas without booting up Claude Desktop, use the official **Model Context Protocol Inspector** utility. This local web diagnostic interface tests tool responses, parameters, and database state mappings in real time.
+
+### 🛠️ Step 1: Prepare the Code for Web/Inspector Mode (SSE)
+Before starting the inspector, open `src/server/hr_mcp_server.py` in your text editor. Locate the main execution block at the bottom of the script and ensure the server runs with explicit `sse` transport transport layers:
+
+```python
+# Modified for Local Debugging / Web Inspector mode
+if __name__ == "__main__":
+    mcp.run(transport="sse")  # ❌ This tracking state is strictly for web/Inspector use
+```
+
+### 🛰️ Step 2: Spin Up the Concurrent Communication Nodes
+Open **two separate terminal window panes** in your workspace directory to launch the server stack and web client:
+
+1. **Terminal 1**: Start your localized Python server process to begin listening for Server-Sent Events on port 8000:
+   ```bash
+   source .venv/bin/activate
+   python src/server/hr_mcp_server.py
+   ```
+2. **Terminal 2**: Execute the official npm model context protocol package installer tool to launch the local web inspector panel automatically:
+   ```bash
+   npx @modelcontextprotocol/inspector http://localhost:8000/sse
+   ```
+
+### 🎛️ Step 3: Establish the Web Console Connection
+1. Your browser will instantly open a new diagnostic tab running at: `http://localhost:3000` (or the console URL printed in Terminal 2).
+2. Inside the configuration panel card layout, configure these connection fields:
+   * **Transport Type**: Select `SSE` from the dropdown selector.
+   * **URL**: Input `http://localhost:8000/sse` into the text box.
+3. Click the high-contrast **`Connect`** command button.
+4. Navigate through the tabs to evaluate tool signatures, test parameter input values (such as querying `user_3619`), and confirm that the SQL policy gates correctly substitute tracking tokens.
+
+---
+
+### 🛡️ Step 4: Reverting Channels Back to Claude Desktop (Stdio Production Mode)
+
+Once you finish auditing your tools, you must teardown the SSE endpoints and switch back to standard I/O streams to avoid connection errors in Claude Desktop.
+
+1. Go back to your active terminal panes and shut down both running programs by pressing **`Ctrl + C`** in each window.
+2. Re-open `src/server/hr_mcp_server.py` in your text editor and update the main execution block at the bottom. Revert the configuration back to standard input/output transport communication pipes:
+
+```python
+# if __name__ == "__main__":
+#     mcp.run(transport="sse") # ❌ Disabled: Web/Inspector specific routing configuration
+if __name__ == "__main__":
+    mcp.run() # ✅ Enabled: Reverts server back to 'stdio' stream format for Claude Desktop
+```
+3. Restart your Claude Desktop app or run your custom `hr_agent.py` loop script to begin querying data safely again.
+
+
 ## 📂 Repository File Structure
 
 ```text
