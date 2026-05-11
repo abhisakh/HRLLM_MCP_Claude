@@ -20,23 +20,20 @@ mcp = FastMCP("HR_Assistant")
 # 🔒 Server-side token storage completely isolated from the LLM heap
 TOKEN_VAULT = {}
 
-# 🔐 Extract the fixed, immutable role injected by hr_agent.py at process startup
-SESSION_ROLE = os.getenv("SESSION_ROLE", "employee").lower()
+# # 🔐 Extract the fixed, immutable role injected by hr_agent.py at process startup
+# SESSION_ROLE = os.getenv("SESSION_ROLE", "employee").lower()
 
-def sql_mask_gate(column_name: str, real_value: str) -> str:
-    """
-    SQL ENGINE POLICY GATE: Checks the immutable SESSION_ROLE before packing rows.
-    If the user has rights, it swaps the value with a token. Otherwise, it redacts it.
-    """
-    if real_value is None or real_value == "":
-        return ""
+# 🔒 In-memory session state (Tracks the active user in Claude Desktop)
+# All tools are blocked until 'user_id' is populated via authenticate_user.
+CURRENT_SESSION = {
+    "user_id": None,
+    "role": "guest",
+    "first_name": "Guest"
+}
 
-    if SESSION_ROLE in ["admin", "hr"]:
-        token = f"[TOKEN_{column_name.upper()}_{uuid.uuid4().hex[:8].upper()}]"
-        TOKEN_VAULT[token] = str(real_value)
-        return token
-    else:
-        return "[REDACTED_UNAUTHORIZED]"
+def is_authenticated():
+    """Checks if a user has successfully logged into the current session."""
+    return CURRENT_SESSION["user_id"] is not None
 
 def get_secure_db():
     """Creates a connection context that enforces masking at the cursor layer."""
@@ -55,33 +52,55 @@ def get_raw_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def sql_mask_gate(column_name: str, real_value: str) -> str:
+    """
+    INTERNAL POLICY ENGINE: Enforces PII masking based on CURRENT_SESSION['role'].
+    """
+    if not real_value:
+        return ""
+
+    # Tokens are only generated if the session is HR or Admin level.
+    if CURRENT_SESSION["role"] in ["admin", "hr"]:
+        token = f"[TOKEN_{column_name.upper()}_{uuid.uuid4().hex[:8].upper()}]"
+        TOKEN_VAULT[token] = str(real_value)
+        return token
+
+    return "[REDACTED_UNAUTHORIZED]"
+
 
 # --- TOOL 1: Bulk Search ---
 @mcp.tool()
-def query_employees(department: str = None, limit: int = 10) -> list[dict]:
+def query_employees(department: str = None, limit: int = 10) -> list[dict] | dict:
     """
-    CRITICAL WORKFORCE BROWSER: Use this tool ONLY when the user explicitly asks to list,
-    show, find, browse, filter, or display groups, teams, cohorts, or departments of
-    staff members, corporate employees, or organization personnel.
+    CRITICAL WORKFORCE BROWSER: Retrieves staff metadata records for groups or departments.
 
-    CRITICAL RESTRICTION 1: Do NOT call this tool if the user provides a singular, specific
-    individual target Employee ID (e.g., 'EMP001'). For singular lookups, use 'get_employee_by_id'.
+    CRITICAL RESTRICTION 1: Do NOT call this tool for singular ID lookups (e.g., 'EMP001').
+    Use 'get_employee_by_id' instead.
 
-    CRITICAL RESTRICTION 2: Data masking occurs entirely at the database level based on the
-    host environment variables. High-risk PII properties ('salary', 'bank_account', 'home_address')
-    will automatically emerge as encrypted system strings like '[TOKEN_SALARY_XXXX]'. You must
-    display these token configurations exactly as returned in your final response text layout.
+    CRITICAL RESTRICTION 2: This tool is LOCKED until 'authenticate_user' is successfully
+    called. If unauthenticated, it returns a status error.
 
     Args:
-        department (str, optional): The explicit target corporate operating group filter string
-            (e.g., 'Engineering', 'Sales', 'Marketing', 'HR'). It matches exactly with database values.
-        limit (int, optional): The maximum integer limit of historical employee records to retrieve
-            in order to protect the context window from optimization bloat. Defaults to 10.
+        department (str, optional): The target corporate group filter (e.g., 'Engineering').
+        limit (int, optional): Max records to retrieve to avoid context bloat. Defaults to 10.
 
     Returns:
-        list[dict]: A list of objects containing sanitized public metadata records alongside structural
-            PII tracking strings. Returns an empty array if no records fit the parameter.
+        list[dict]: A list of objects containing:
+            - user_id (str): Unique identifier.
+            - first_name, last_name (str): Employee name.
+            - department, position (str): Role and group details.
+            - email (str): Work contact.
+            - hire_date (str): ISO date of joining.
+            - available_pto (int): Remaining leave balance.
+            - salary (str): Masked token (e.g., [TOKEN_SALARY_XXXX]) or [REDACTED].
+            - bank_account (str): Masked token or [REDACTED].
+            - home_address (str): Masked token or [REDACTED].
+        dict: Returns an error status if the session is not authenticated.
     """
+    # Verify session before proceeding
+    if not is_authenticated():
+        return {"status": "error", "message": "AUTHENTICATION REQUIRED: Please log in to view workforce data."}
+
     with get_secure_db() as conn:
         sql_query = """
             SELECT
@@ -97,6 +116,7 @@ def query_employees(department: str = None, limit: int = 10) -> list[dict]:
         else:
             sql_query += " LIMIT ?"
             rows = conn.execute(sql_query, (limit,)).fetchall()
+
         return [dict(r) for r in rows]
 
 
@@ -122,6 +142,8 @@ def get_employee_by_id(user_id: str) -> dict:
         dict: A status map wrapping data fields if matched. Returns a clear 'error' status message
             sentinel block if the structural key is completely absent from the relational table.
     """
+    if not is_authenticated():
+        return {"status": "error", "message": "Login required."}
     with get_secure_db() as conn:
         sql_query = """
             SELECT
@@ -230,7 +252,9 @@ def get_hr_alerts(alert_type: str) -> list[dict]:
         list[dict]: Array list of employee name indicators mapped against corresponding conditional parameters
             (either total remaining PTO integer values or hire date strings).
     """
-    with get_db() as conn:
+    if not is_authenticated():
+        return [{"error": "Login required."}]
+    with get_secure_db() as conn:
         if alert_type == "burnout":
             rows = conn.execute("SELECT first_name, last_name, available_pto FROM employees WHERE available_pto > 12").fetchall()
         else:
@@ -254,8 +278,10 @@ def get_salary_stats() -> list[dict]:
         list[dict]: A collection of structural database rows tracking average salary calculations rounded
             to two decimal parameters per operational business group.
     """
-    if SESSION_ROLE not in ["admin", "hr"]:
-        return [{"error": "Access Denied: Inadequate privileges to calculate corporate metrics."}]
+    if not is_authenticated():
+        return [{"error": "Login required."}]
+    if CURRENT_SESSION["role"] not in ["admin", "hr"]:
+        return [{"error": "Access Denied: Inadequate privileges."}]
     with get_secure_db() as conn:
         rows = conn.execute("SELECT department, ROUND(AVG(salary), 2) as avg_salary FROM employees GROUP BY department").fetchall()
         return [dict(r) for r in rows]
@@ -303,18 +329,14 @@ def search_policy_documents(query: str) -> str:
 @mcp.tool()
 def authenticate_user(username: str, password_plain: str) -> dict:
     """
-    GATEKEEPER AUTHENTICATION SYSTEM: Cryptographic credentials validation engine. This tool is the
-    MANDATORY security gatekeeper checkpoint that must be called during session startup. It cleans,
-    hashes, and verifies input keys against the immutable user datastore ledger.
+    SESSION GATEKEEPER: Validates credentials and unlocks the HR server.
+
+    This is the ONLY tool accessible in an unauthenticated state. Upon success,
+    it upgrades the server's internal access role and enables all other tools.
 
     Args:
-        username (str): The exact alphanumeric login string submitted by the logging employee.
-        password_plain (str): The raw, unhashed plaintext password string passed straight from
-            the application's secure user prompt.
-
-    Returns:
-        dict: A security dictionary parsing status values. If successful, it passes 'user_id',
-            'role', and 'first_name' structures to the application orchestrator.
+        username (str): The corporate login name.
+        password_plain (str): The plaintext password for server-side hashing.
     """
     u = username.strip()
     p = password_plain.strip()
@@ -328,17 +350,37 @@ def authenticate_user(username: str, password_plain: str) -> dict:
             WHERE u.username = ? AND u.password_hash = ?
         """
         result = conn.execute(query, (u, incoming_hash)).fetchone()
+
         if result:
+            CURRENT_SESSION["user_id"] = result["user_id"]
+            CURRENT_SESSION["role"] = result["role"]
+            CURRENT_SESSION["first_name"] = result["first_name"]
+
             return {
                 "status": "success",
+                "message": f"Welcome, {result['first_name']}. Session unlocked.",
                 "user_id": result["user_id"],
-                "role": result["role"],
-                "first_name": result["first_name"]
+                "role": result["role"]
             }
-        return {"status": "error", "message": "Invalid credentials"}
+        return {"status": "error", "message": "Invalid credentials. Access denied."}
 
 
-# --- TOOL 10: AUTOMATIC AUDITING ---
+# --- TOOL 11: LOGOUT USER ---
+@mcp.tool()
+def logout_user() -> str:
+    """
+    SECURE TERMINATION: Wipes the session and locks the server immediately.
+
+    Call this to end the session. All subsequent calls to HR tools will be
+    blocked until a new login is performed.
+    """
+    CURRENT_SESSION["user_id"] = None
+    CURRENT_SESSION["role"] = "guest"
+    CURRENT_SESSION["first_name"] = "Guest"
+    return "Session terminated. HR Portal locked."
+
+
+# --- TOOL 12: AUTOMATIC AUDITING ---
 @mcp.tool()
 def save_to_audit(user_id: str, question: str, answer: str, source: str, node_path: str) -> str:
     """
@@ -370,7 +412,7 @@ def save_to_audit(user_id: str, question: str, answer: str, source: str, node_pa
     return "Audit frame committed successfully."
 
 
-# --- TOOL 11: HISTORICAL CONTEXT RETRIEVAL ---
+# --- TOOL 13: HISTORICAL CONTEXT RETRIEVAL ---
 @mcp.tool()
 def get_chat_history(user_id: str) -> list[dict]:
     """
@@ -394,7 +436,7 @@ def get_chat_history(user_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-# --- SYSTEM ENDPOINT: Client Demasking ---
+# --- TOOL 14: SYSTEM ENDPOINT: Client Demasking ---
 @mcp.tool()
 def demask_token_payload(token: str) -> str:
     """
@@ -414,7 +456,7 @@ def demask_token_payload(token: str) -> str:
         str: The raw, unmasked data value string retrieved from the secure server vault. Returns the input
             token unchanged if no matching state map is found or if permissions are invalid.
     """
-    if SESSION_ROLE not in ["admin", "hr"]:
+    if CURRENT_SESSION["role"] not in ["admin", "hr"]:
         return "[ACCESS_DENIED]"
     return TOKEN_VAULT.get(token, token)
 

@@ -1,5 +1,4 @@
 import sys
-# Ensures your virtual environment packages are discoverable
 sys.path.insert(0, "/Users/abhisakhsarma/Software_Engineering/Master_School/MCP/my_mcp_project/.venv/lib/python3.13/site-packages")
 
 import asyncio
@@ -25,73 +24,54 @@ load_dotenv(REPO_ROOT / ".env")
 VENV_PYTHON = str(REPO_ROOT / ".venv" / "bin" / "python3")
 SERVER_SCRIPT = str(REPO_ROOT / "src" / "server" / "hr_mcp_server.py")
 
-
 CORE_STRATEGY_PROMPT = """You are the Umbrella Corp HR Assistant.
-Current Session: {first_name} (ID: {user_id}) | Role: {role}
+You operate in a high-security environment where PII (Personally Identifiable Information) is tokenized.
 
---- DATA HANDLING RULES ---
-1. SQL SOURCE (Structured): When using 'query_employees' or 'get_salary_stats':
-   - If data is empty, say: "No employee records matched that criteria."
-   - DO NOT mention 'supervisor_id' unless specifically asked.
-   - If the user asks for 'contact info', prioritize Email and Phone Number only.
-   - For lists, use a Markdown Table.
+--- MANDATORY PROTOCOLS ---
+1. AUTHENTICATION FIRST: If 'is_authenticated' returns False or if you haven't called 'authenticate_user', you must refuse all data requests and redirect the user to log in.
+2. TOKEN INTEGRITY: You will encounter data in the format [TOKEN_TYPE_ID].
+   - NEVER try to guess, invent, or hide these tokens.
+   - ALWAYS include them in your response exactly as received.
+   - The UI layer will handle the decryption; your job is only to pass the token through.
+3. STRUCTURED DATA: When displaying employee lists, always use Markdown tables for clarity.
+4. POLICY KNOWLEDGE: Use 'search_policy_documents' for any procedural questions.
+   - You MUST provide the "Source" metadata for every policy answer.
+5. COMPLIANCE AUDITING: Every single response must be followed by a call to 'save_to_audit'.
+   - Pass the user's question and your response (containing tokens) to this tool.
 
-2. VECTOR SOURCE (Unstructured): When using 'search_policy_documents':
-   - Synthesize the answer from the content provided.
-   - ALWAYS cite the source (e.g., 'Source: Employee_Handbook_2023.pdf').
-   - If the answer isn't in the context, say: "I'm sorry, our policy documents don't cover that specific detail."
-
-3. SECURITY & PII:
-   - Your role is {role}.
-   - You will see system data values masked as tokens like [TOKEN_SALARY_XXXX] or [TOKEN_ADDRESS_XXXX].
-   - Treat tokens as real placeholders. Do NOT attempt to alter, invent, or truncate token strings.
-   - Print tokens unmodified in your final response text exactly as provided by tools. The platform UI resolves them.
-
-4. LOGGING:
-   - You MUST call 'save_to_audit' after every successful response.
+--- TONE ---
+Professional, efficient, and security-conscious. Do not apologize for security restrictions.
 """
 
-def summarize_history(messages, llm):
-    """Summarizes past interaction blocks to keep context compressed."""
-    chat_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-8:]])
-    summary = llm.invoke([
-        SystemMessage(content="Summarize this HR chat briefly. Keep names, specific requests, and any active [TOKEN_...] placeholders intact."),
-        HumanMessage(content=chat_text)
-    ])
-    return summary.content
-
 async def run_conversation():
-    # 1. PERSISTENT STORAGE FOR CHAT CHECKPOINTS
     memory = SqliteSaver.from_conn_string("checkpoints.sqlite")
 
-    # 2. SEED CLIENT: BOOT A TEMPORARY PROCESS CONTEXT FOR USER AUTHENTICATION ONLY
-    # This prevents unauthenticated context loops from hijacking primary runtime environments
-    init_env = os.environ.copy()
-    init_env["SESSION_ROLE"] = "employee"  # Start with minimum default clearance parameters
-
-    bootstrap_client = MultiServerMCPClient({
+    # ONE CLIENT TO RULE THEM ALL
+    # We keep this process alive so the server maintains its 'CURRENT_SESSION' state.
+    client = MultiServerMCPClient({
         "hr-server": {
             "command": VENV_PYTHON,
             "args": [SERVER_SCRIPT],
-            "transport": "stdio",
-            "env": init_env
+            "transport": "stdio"
         }
     })
 
-    print("🛰️ Establishing Secure Handshake with Authentication Node...")
-    auth_tools = await bootstrap_client.get_tools()
+    print("🛰️ Connecting to HR Infrastructure...")
+    tools = await client.get_tools()
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    auth_agent = create_react_agent(llm, auth_tools, checkpointer=memory)
+    agent = create_react_agent(llm, tools, checkpointer=memory)
 
     # --- STEP 1: AUTHENTICATION ---
     print("\n🔐 UMBRELLA CORP LOGIN")
     uname = input("Username: ").strip()
     upass = input("Password: ").strip()
 
-    # Request credentials processing through agent node architecture
-    auth_result = await auth_agent.ainvoke({"messages": [HumanMessage(content=f"Authenticate user {uname} with password {upass}")]})
+    # The agent calls 'authenticate_user'. The server then saves the role in memory.
+    auth_msg = HumanMessage(content=f"Please log me in with username '{uname}' and password '{upass}' using the authentication tool.")
+    auth_result = await agent.ainvoke({"messages": [auth_msg]})
 
     user_context = None
+    # Look for the tool response to get user details
     for msg in reversed(auth_result["messages"]):
         if isinstance(msg, ToolMessage):
             try:
@@ -99,118 +79,75 @@ async def run_conversation():
                 if data.get("status") == "success":
                     user_context = data
                     break
-            except Exception:
-                continue
+            except: continue
 
     if not user_context:
-        print("❌ Login Failed: Invalid Credentials.")
-        # Safely disconnect baseline stream channels before termination
-        await bootstrap_client.close()
+        print("❌ Login Failed.")
+        await client.close()
         return
 
-    # Shutdown the temporary bootstrap initialization channel process cleanly
-    await bootstrap_client.close()
-
-    # --- STEP 2: IMMUTABLE SESSION CONFIGURATION ---
     user_id = user_context["user_id"]
-    role = user_context["role"]
     config = {"configurable": {"thread_id": user_id}}
+    messages = [SystemMessage(content=CORE_STRATEGY_PROMPT + f"\nActive Session: {user_context['first_name']} | Role: {user_context['role']}")]
 
-    # 🔒 RE-SPAWN PRIMARY MCP SERVER ISOLATED AT OPERATING SYSTEM LEVEL WITH TRUE VALIDATED ROLE
-    server_env = os.environ.copy()
-    server_env["SESSION_ROLE"] = str(role)
+    print(f"\n✅ Access Granted. Welcome, {user_context.get('first_name', 'User')}!")
 
-    client = MultiServerMCPClient({
-        "hr-server": {
-            "command": VENV_PYTHON,
-            "args": [SERVER_SCRIPT],
-            "transport": "stdio",
-            "env": server_env
-        }
-    })
-
-    print(f"🔒 Spawning Isolated Environment Process for Role: {role.upper()}...")
-    tools = await client.get_tools()
-    agent = create_react_agent(llm, tools, checkpointer=memory)
-
-    system_msg = SystemMessage(content=CORE_STRATEGY_PROMPT.format(**user_context))
-    messages = [system_msg]
-
-    print(f"\n✅ Access Granted. Welcome, {user_context['first_name']}!")
-    print("-" * 50)
-
-    # --- STEP 3: CHAT LOOP ---
+    # --- STEP 2: CHAT LOOP ---
     while True:
         try:
-            user_input = input("You: ").strip()
-            if user_input.lower() in ["q", "quit", "exit"]:
-                break
-            if not user_input:
-                continue
+            user_input = input("\nYou: ").strip()
+            if user_input.lower() in ["q", "quit", "exit"]: break
 
             messages.append(HumanMessage(content=user_input))
             result = await agent.ainvoke({"messages": messages}, config=config)
             messages = result["messages"]
 
-            # --- STEP 4: DYNAMIC SOURCE DETECTION ---
+            # Source detection for audit
             source_used = "General"
             node_path = "generation_node"
             for m in reversed(messages):
                 if isinstance(m, ToolMessage):
                     node_path = m.name
-                    source_used = "SQL" if "query" in m.name or "stats" in m.name else "Vector"
+                    source_used = "SQL" if "query" in m.name else "Vector"
                     break
 
-            raw_response_text = messages[-1].content
+            raw_text = messages[-1].content
 
-            # --- 🛡️ CLIENT-SIDE PII DE-TOKENIZATION INTERCEPTION ---
+            # --- STEP 3: DE-TOKENIZATION (For User Display) ---
             token_pattern = r"\[TOKEN_[A-Z0-9_]+\]"
-            tokens_found = re.findall(token_pattern, raw_response_text)
+            tokens = re.findall(token_pattern, raw_text)
+            display_text = raw_text
 
-            hr_visible_text = raw_response_text
+            if tokens:
+                for t in set(tokens):
+                    # We call the tool directly through the client
+                    resp = await client.send_request("hr-server", "tools/call", {
+                        "name": "demask_token_payload",
+                        "arguments": {"token": t}
+                    })
+                    # FastMCP returns { "content": [{ "type": "text", "text": "..." }] }
+                    real_val = resp['content'][0]['text']
+                    display_text = display_text.replace(t, real_val)
 
-            if tokens_found:
-                for token in set(tokens_found):
-                    try:
-                        # Call the demask tool directly via client payload bypassing Claude context frame history
-                        # Notice: No 'role' parameter is sent. Server extracts permissions out of server_env["SESSION_ROLE"]
-                        demask_res = await client.send_request(
-                            "hr-server",
-                            "tools/call",
-                            {"name": "demask_token_payload", "arguments": {"token": token}}
-                        )
-                        # Parse out data arrays cleanly based on expected standard FastMCP message envelopes
-                        content_list = demask_res.get("content", [{}])
-                        real_value = content_list[0].get("text", token) if content_list else token
-                        hr_visible_text = hr_visible_text.replace(token, real_value)
-                    except Exception:
-                        hr_visible_text = hr_visible_text.replace(token, f"[ERR_RESOLVING_TOKEN]")
+            print(f"\nAssistant: {display_text}")
 
-            print(f"\nAssistant: {hr_visible_text}")
-
-            # --- STEP 5: AUTOMATIC AUDITING ---
-            audit_trigger = (f"Internal: save_to_audit(user_id='{user_id}', "
-                             f"question='{user_input}', answer='[REDACTED_PII_LOG]', "
-                             f"source='{source_used}', node='{node_path}')")
-            await agent.ainvoke({"messages": [HumanMessage(content=audit_trigger)]}, config=config)
-
-            # --- STEP 6: CONTEXT COMPRESSION ---
-            if len(messages) > 12:
-                print("📝 Optimizing context window...")
-                summary = summarize_history(messages, llm)
-                messages = [system_msg, SystemMessage(content=f"Summary of previous turns: {summary}"), messages[-1]]
-
-            print("-" * 50)
+            # --- STEP 4: AUDIT ---
+            await client.send_request("hr-server", "tools/call", {
+                "name": "save_to_audit",
+                "arguments": {
+                    "user_id": user_id,
+                    "question": user_input,
+                    "answer": raw_text, # Audit the tokens, not the secret data
+                    "source": source_used,
+                    "node_path": node_path
+                }
+            })
 
         except Exception as e:
-            print(f"\n❌ System Error: {e}")
+            print(f"❌ Error: {e}")
             break
 
-    # Clean disconnection on clean application termination
     await client.close()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(run_conversation())
-    except KeyboardInterrupt:
-        print("\nSession ended cleanly.")
+    asyncio.run(run_conversation())
